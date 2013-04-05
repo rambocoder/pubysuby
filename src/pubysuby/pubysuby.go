@@ -60,7 +60,7 @@ func (ps *PubySuby) Unsubscribe( topic string, myListenChannel chan []TopicItem)
 }
 
 // Pull all messages from the specified topic
-// Blocks for the timeout duration in seconds until new message is published
+// If none are in the topic, blocks for the timeout duration in seconds until new message is published
 func (ps *PubySuby) Pull(topic string, timeout int64) []TopicItem  {
 
 	topicCommandChannel := ps.getTopicCommandChannel(topic)
@@ -88,7 +88,7 @@ func (ps *PubySuby) Pull(topic string, timeout int64) []TopicItem  {
 }
 
 // Pull all messages from the specified topic
-// Blocks for the timeout duration in seconds until new message is published
+// If none are in the topic, blocks for the timeout duration in seconds until new message is published
 func (ps *PubySuby) PullSince(topic string, timeout int64, since int64) []TopicItem  {
 
 	topicCommandChannel := ps.getTopicCommandChannel(topic)

@@ -1,7 +1,8 @@
-// curl "http://localhost:8080/Poll/1?topic=test&timeout=5"
+// curl "http://localhost:8080/Pull/?topic=test&timeout=5"
+// curl "http://localhost:8080/PullSince/?since=5&topic=test&timeout=5"
 // curl "http://localhost:8080/Sub"
 // curl -d "topic=test&message=Hello" http://localhost:8080/Push
-// ab -c 500 -n 10000 "http://localhost:8080/Poll/1?topic=test"
+// ab -c 500 -n 10000 "http://localhost:8080/Pull/?topic=test&timeout=0"
 
 package main
 
@@ -67,16 +68,13 @@ func HandleSub(w http.ResponseWriter, r *http.Request) {
 			ps.Unsubscribe("test", myListenChannel)
 			break
 		}
-		if (i > 2) {
-			return
-		}
 
 		fmt.Println("Updates in sub:", updates)
 		if (i > 5) {
 			log.Println("After 5 updates, just gonna turn off the Sub")
 			break
 		}
-		fmt.Fprintf(w, "Said: %i %q on topic: %q \n", updates[0].MessageId, updates[0].Message, html.EscapeString("test"))
+		fmt.Fprintf(w, "Message Id: %d is: %q on topic: %q \n", updates[0].MessageId, updates[0].Message, html.EscapeString("test"))
 	}
 }
 
@@ -89,7 +87,7 @@ func HandlePull(w http.ResponseWriter, r *http.Request) {
 	messages = ps.Pull(topicName, wait)
 
 	for _, v := range messages {
-		fmt.Fprintf(w, "Said: %i %q on topic: %q \n", v.MessageId, v.Message, html.EscapeString(topicName))
+		fmt.Fprintf(w, "Message Id: %d is: %q on topic: %q \n", v.MessageId, v.Message, html.EscapeString(topicName))
 	}
 
 }
@@ -105,7 +103,7 @@ func HandlePullSince(w http.ResponseWriter, r *http.Request) {
 	messages = ps.PullSince(topicName, wait, lastMessageId)
 
 	for _, v := range messages {
-		fmt.Fprintf(w, "Said: %i %q on topic: %q \n", v.MessageId, v.Message, html.EscapeString(topicName))
+		fmt.Fprintf(w, "Message Id: %d is: %q on topic: %q \n", v.MessageId, v.Message, html.EscapeString(topicName))
 	}
 
 }
@@ -120,5 +118,5 @@ func HandleLastMessageId(w http.ResponseWriter, r *http.Request) {
 func HandlePush(w http.ResponseWriter, r *http.Request) {
 	topicName := r.FormValue("topic")
 	content := r.FormValue("message")
-	fmt.Fprintf(w, "That Message Id is: %i on topic: %q \n", ps.Push(topicName, content), topicName)
+	fmt.Fprintf(w, "That Message Id is: %d on topic: %q \n", ps.Push(topicName, content), topicName)
 }

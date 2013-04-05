@@ -27,7 +27,7 @@ func TestSubDeath(t *testing.T) {
 }
 
 func TestSub(t *testing.T) {
-	runtime.GOMAXPROCS(64)
+	runtime.GOMAXPROCS(4)
 	for y := 0; y < 100; y++ {
 		go func(y1 int) {
 			ps := New()
@@ -51,14 +51,14 @@ func TestSub(t *testing.T) {
 }
 
 func TestPullZeroTimeout(t *testing.T) {
-	runtime.GOMAXPROCS(64)
+	runtime.GOMAXPROCS(4)
 	go func() {
 		ps := New()
 		for i := 0; i < 100; i++ {
-			go func() {
+			go func(i1 int) {
 
 				go func() {
-					messages := ps.Pull("TestPullZeroTimeout" + strconv.FormatInt(int64(i), 10), 0)
+					messages := ps.Pull("TestPullZeroTimeout" + strconv.FormatInt(int64(i1), 10), 0)
 					if (messages == nil) {
 						// empty channel
 					} else if (messages[0].Message != "TestPullZeroTimeout") {
@@ -66,12 +66,12 @@ func TestPullZeroTimeout(t *testing.T) {
 					}
 				}()
 				<-time.After(time.Second*1)
-				result := ps.Push("TestPullZeroTimeout" + strconv.FormatInt(int64(i), 10), "TestPullZeroTimeout")
+				result := ps.Push("TestPullZeroTimeout" + strconv.FormatInt(int64(i1), 10), "TestPullZeroTimeout")
 				if result < 1 {
 					t.Error("Expected greater than 0 from publish, got", result)
 				}
 
-			}()
+			}(i)
 
 		}
 
@@ -81,7 +81,7 @@ func TestPullZeroTimeout(t *testing.T) {
 }
 
 func TestPull(t *testing.T) {
-	runtime.GOMAXPROCS(64)
+	runtime.GOMAXPROCS(4)
 	go func() {
 		ps := New()
 		for i := 0; i < 100; i++ {
@@ -98,7 +98,7 @@ func TestPull(t *testing.T) {
 }
 
 func TestTimeout(t *testing.T) {
-	runtime.GOMAXPROCS(64)
+	runtime.GOMAXPROCS(4)
 	go func() {
 		ps := New()
 		timedOut := ps.Pull("TestTimeout", 5)
@@ -112,7 +112,7 @@ func TestTimeout(t *testing.T) {
 
 
 func TestPullExplicitClose(t *testing.T) {
-	runtime.GOMAXPROCS(64)
+	runtime.GOMAXPROCS(4)
 
 
 
