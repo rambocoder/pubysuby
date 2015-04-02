@@ -8,7 +8,7 @@ package main
 
 import (
 	"fmt"
-	"github.com/AllYouCanAlex/pubysuby"
+	"github.com/rambocoder/pubysuby"
 	"github.com/gorilla/mux"
 	"html"
 	"log"
@@ -16,6 +16,10 @@ import (
 	"net/url"
 	"runtime"
 	"strconv"
+	"os"
+	"io"
+	"encoding/json"
+	"io/ioutil"
 )
 
 var ps *pubysuby.PubySuby
@@ -25,21 +29,36 @@ func main() {
 	r.HandleFunc("/", HomeHandler).Methods("GET")
 	http.Handle("/", r)
 
+	fs := http.FileServer(http.Dir("static"))
+	http.Handle("/static/", http.StripPrefix("/static/", fs))
+
 	runtime.GOMAXPROCS(64)
 
-	ps = pubysuby.New()
+	ps = pubysuby.NewPubySuby()
 
-	http.HandleFunc("/Pull/", HandlePull)
-	http.HandleFunc("/PullSince/", HandlePullSince)
+	http.HandleFunc("/pull/", HandlePull)
+	http.HandleFunc("/chat/pullsince", HandlePullSince)
 	http.HandleFunc("/Push", HandlePush)
 	http.HandleFunc("/Sub", HandleSub)
-	http.HandleFunc("/LastMessageId", HandleLastMessageId)
-	fmt.Println("Listening on http://localhost:8080")
-	http.ListenAndServe("localhost:8080", nil)
+	http.HandleFunc("/chat/start", HandleLastMessageId)
+	http.HandleFunc("/chat/push", HandlePushJson)
+	fmt.Println("Listening on http://localhost:8888")
+	http.ListenAndServe("localhost:8888", nil)
 }
 
 func HomeHandler(w http.ResponseWriter, r *http.Request) {
-	fmt.Fprintf(w, "Home \n")
+	file, err := os.Open("static/index.html")
+	defer file.Close()
+	if err != nil {
+		log.Fatalf("error opening file: %v", err)
+	}
+	io.Copy(w, file)
+}
+
+func HandlePush(w http.ResponseWriter, r *http.Request) {
+	topicName := r.FormValue("topic")
+	content := r.FormValue("message")
+	fmt.Fprintf(w, "That Message Id is: %d on topic: %q \n", ps.Push(topicName, content), topicName)
 }
 
 func getQuery(r *http.Request, name string) string {
@@ -90,7 +109,10 @@ func HandlePull(w http.ResponseWriter, r *http.Request) {
 
 	topicName := getQuery(r, "topic")
 	timeout := getQuery(r, "timeout")
+
 	wait, _ := strconv.ParseInt(timeout, 10, 64)
+
+
 	var messages []pubysuby.TopicItem
 	messages = ps.Pull(topicName, wait)
 
@@ -98,6 +120,48 @@ func HandlePull(w http.ResponseWriter, r *http.Request) {
 		fmt.Fprintf(w, "Message Id: %d is: %q on topic: %q \n", v.MessageId, v.Message, html.EscapeString(topicName))
 	}
 
+}
+
+
+
+func HandleLastMessageId(w http.ResponseWriter, r *http.Request) {
+
+	// topic name here is hardcoded to test
+	fmt.Printf("Last Message Id is: %d on topic: %s \n", ps.LastMessageId("test"), html.EscapeString("test"))
+
+	fmt.Fprintf(w, `{"LastMessageId":"%s"}`,  strconv.FormatInt(ps.LastMessageId("test"), 10) )
+
+}
+
+
+
+func HandlePushJson(w http.ResponseWriter, r *http.Request) {
+	//topicName := r.FormValue("topic")
+	//content := r.FormValue("message")
+
+	m := Message{}
+
+	b, _ := ioutil.ReadAll(r.Body)
+	jdata := string(b)
+	log.Println("Received: " + jdata)
+
+	err := json.Unmarshal([]byte(jdata), &m)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+
+	//json.NewDecoder(r.Body).Decode(&m)
+
+	fmt.Println("Message is: " + m.Message)
+
+	fmt.Fprintf(w, `{"ok":"true"}`)
+
+	fmt.Printf( "That Message Id is: %d on topic: %q \n", ps.Push("test", m.Message), "test")
+}
+
+type Message struct {
+	Message string `json:"message"`
 }
 
 func HandlePullSince(w http.ResponseWriter, r *http.Request) {
@@ -110,21 +174,17 @@ func HandlePullSince(w http.ResponseWriter, r *http.Request) {
 	var messages []pubysuby.TopicItem
 	messages = ps.PullSince(topicName, wait, lastMessageId)
 
-	for _, v := range messages {
-		fmt.Fprintf(w, "Message Id: %d is: %q on topic: %q \n", v.MessageId, v.Message, html.EscapeString(topicName))
+	if len(messages) > 0 {
+
+		for _, v := range messages {
+			fmt.Println("Mesage to send out" + v.Message)
+			fmt.Printf("Message Id: %d is: %q on topic: %q \n", v.MessageId, v.Message, html.EscapeString(topicName))
+
+			fmt.Fprintf(w, `{"ok":{"text":"%s"}, "timestamp":"%d"}`, v.Message, v.MessageId)
+		}
+	}else {
+		fmt.Printf(`{"ok":"timeout", "timestamp":"%d"}\n`, lastMessageId)
+		fmt.Fprintf(w, `{"ok":"timeout", "timestamp":"%d"}`, lastMessageId)
 	}
 
-}
-
-func HandleLastMessageId(w http.ResponseWriter, r *http.Request) {
-
-	// topic name here is hardcoded to test
-	fmt.Fprintf(w, "Last Message Id is: %i on topic: %q \n", ps.LastMessageId("test"), html.EscapeString("test"))
-
-}
-
-func HandlePush(w http.ResponseWriter, r *http.Request) {
-	topicName := r.FormValue("topic")
-	content := r.FormValue("message")
-	fmt.Fprintf(w, "That Message Id is: %d on topic: %q \n", ps.Push(topicName, content), topicName)
 }

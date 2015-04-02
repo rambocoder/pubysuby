@@ -1,0 +1,4 @@
+-timeout=30s
+
+// just like "go test -race -v"
+-race

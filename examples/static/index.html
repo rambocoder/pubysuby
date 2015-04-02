@@ -1,0 +1,42 @@
+<html>
+<head>
+    <title>ChicagoBoss Chat Demo</title>
+    <style>
+        html, body {margin:0; padding:0;}
+        body {font:50% Helvetica, Arial, sans-serif; }
+        #stage {margin: 0 auto; margin-top: 1em; text-align:left; font-size:2.1em; width:40em; -moz-border-radius: 15px; border-radius: 15px; border:2px solid #000; }
+        #header {text-align:center; }
+        /* Messages Display Area */
+        #chatMessages {margin:0 auto; margin-bottom: 20px; border:1px solid #CCC; width:90%; height:15em; overflow:auto; background-color: #F8F8F8; }
+        #msgList {margin:0px; padding:5px; list-style:none;}
+        #msgList li {padding:5px 10px; border-bottom:1px solid gray;}
+        .error {color:red;}
+        /* Messages Input Area */
+        #inputArea {margin:0 auto; width: 90%; }
+        #chatForm {padding:5px; text-align:center;}
+        #chatForm input {width:75%; font-size:1em; margin:0 2px;}
+        #chatForm .submit {width:20%;}
+    </style>
+    <script src="http://code.jquery.com/jquery-latest.js"></script>
+    <script src="static/chat.js"></script>
+</head>
+<body>
+<div id="stage">
+    <div id="header">
+        <h1>PubySuby Chat Demo</h1>
+    </div>
+    <div id="inputArea">
+        <!-- #chatForm events will be used as a recursive loop, since recursion is limited in JavaScript -->
+        <form id="chatForm" autocomplete="off">
+            <input type="text" name="inputBox" id="inputBox">
+            <input type="submit" class="submit" value="Shout">
+        </form>
+    </div>
+    <!-- chat messages will be rendered inside this div, prepended to msgList -->
+    <div id="chatMessages">
+        <ul id="msgList"></ul>
+    </div>
+
+</div>
+</body>
+</html>

@@ -2,10 +2,6 @@ package pubysuby
 
 import (
 	"time"
-	//"fmt"
-	//"log"
-	"container/list"
-	//"strconv"
 )
 
 type PubySuby struct {
@@ -20,7 +16,7 @@ type hubRequest struct {
 
 // New creates a new PubySuby hub and
 // starts a goroutine for handling commands
-func New() *PubySuby {
+func NewPubySuby() *PubySuby {
 	ch := make(chan hubRequest)
 	ps := PubySuby{hubRequests: ch, globalTimeout: 30}
 	go ps.hubController()
@@ -80,11 +76,10 @@ func (ps *PubySuby) Pull(topic string, timeout int64) []TopicItem {
 // Pull all messages from the specified topic
 // If none are in the topic, blocks for the timeout duration in seconds until new message is published
 func (ps *PubySuby) PullSince(topic string, timeout int64, since int64) []TopicItem {
+	myListenChannel := make(chan []TopicItem)
 
 	topicCommandChannel := ps.getTopicRequestChannel(topic)
 	// once we have the topic channel, we have to send it our listener info
-	myListenChannel := make(chan []TopicItem)
-
 	topicCommandChannel <- topicRequest{Cmd: "pullsince", topicReplyChannel: myListenChannel, since: since}
 	var reply []TopicItem
 	select {
@@ -166,24 +161,4 @@ func (ps *PubySuby) getTopicRequestChannel(topicName string) chan topicRequest {
 	// Receive the reply
 	topicCommandChannel := <-reply
 	return topicCommandChannel
-}
-
-func trimToSize(l *list.List, size int) {
-	if l.Len() > size {
-		diff := l.Len() - size
-		for i := 0; i < diff; i++ {
-			l.Remove(l.Front()) // Remove the first item from the que
-		}
-	}
-}
-
-func trimToMaxAge(l *list.List, seconds int) {
-	for e := l.Front(); e != nil; e = e.Next() {
-		var item TopicItem
-		item = e.Value.(TopicItem)
-		if int(time.Since(item.CreatedTime).Seconds()) > seconds {
-			l.Remove(e)
-		}
-
-	}
 }

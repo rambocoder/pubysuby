@@ -2,10 +2,8 @@ package pubysuby
 
 import (
 	"time"
-	//"fmt"
-	//"log"
 	"container/list"
-	//"strconv"
+	"log"
 )
 
 type topicRequest struct {
@@ -27,11 +25,19 @@ type Topic struct {
 	item_max_age   int
 	maxItemsLength int
 	CommandChannel chan topicRequest
+	items *list.List
 }
 
 func NewTopic(topicName string) *Topic {
 	ch := make(chan topicRequest)
-	t := Topic{CommandChannel: ch, globalTimeOut: 30, topicName: topicName, item_max_age: 70, maxItemsLength: 5}
+	t := Topic{
+		CommandChannel: ch,
+		globalTimeOut: 30,
+		topicName: topicName,
+		item_max_age: 70,
+		maxItemsLength: 5,
+		items: list.New(),
+	}
 	go t.topicController()
 	return &t
 }
@@ -40,51 +46,49 @@ func (t *Topic) topicController() {
 	//fmt.Println("Started topic controller", topicName)
 	// key: listener channels that can receive a string
 	// value: pub once
-	listeners := make(map[chan []TopicItem]bool)
-	var lastMessageId int64 = 0
-	items := list.New()
+	// this is needed because "pull*" command has a listener
+	// that will disappear after it receives the data
+	// unlike the "sub"
+	pubOnceListeners := make(map[chan []TopicItem]bool)
+	var lastMessageId int64 = 1
+
 	for {
-		var cmd topicRequest
 		select {
 		case <-time.After(time.Second * 1):
-			// Check if there are any expired messages every second
-			trimToMaxAge(items, t.item_max_age)
-			trimToSize(items, t.maxItemsLength)
-
-		case cmd = <-t.CommandChannel:
+			t.GC()
+		case cmd := <-t.CommandChannel:
 			if cmd.Cmd == "sub" {
 
 				//log.Println("Subscribed")
-				listeners[cmd.topicReplyChannel] = false
+				pubOnceListeners[cmd.topicReplyChannel] = false
 
 			} else if cmd.Cmd == "pull" {
 
 				//log.Println("Started pull")
-				listeners[cmd.topicReplyChannel] = true
-				if items.Len() > 0 {
-					trimToMaxAge(items, t.item_max_age)
-					trimToSize(items, t.maxItemsLength)
-					results := make([]TopicItem, 0, items.Len())
-					for e := items.Front(); e != nil; e = e.Next() {
+				pubOnceListeners[cmd.topicReplyChannel] = true
+				if t.items.Len() > 0 {
+
+					results := make([]TopicItem, 0, t.items.Len())
+					for e := t.items.Front(); e != nil; e = e.Next() {
 						var item TopicItem
 						item = e.Value.(TopicItem)
 						results = append(results, item)
 					}
 					cmd.topicReplyChannel <- results
 					//log.Println("Closed pull")
+					// close it so that pull receive stops
 					close(cmd.topicReplyChannel)
-					delete(listeners, cmd.topicReplyChannel)
+					delete(pubOnceListeners, cmd.topicReplyChannel)
 				}
 
 			} else if cmd.Cmd == "pullsince" {
 
 				//log.Println("Started pullsince: ", cmd.since)
-				listeners[cmd.topicReplyChannel] = true
-				if items.Len() > 0 {
-					trimToMaxAge(items, t.item_max_age)
-					trimToSize(items, t.maxItemsLength)
-					results := make([]TopicItem, 0, items.Len())
-					for e := items.Front(); e != nil; e = e.Next() {
+				pubOnceListeners[cmd.topicReplyChannel] = true
+				if t.items.Len() > 0 {
+
+					results := make([]TopicItem, 0, t.items.Len())
+					for e := t.items.Front(); e != nil; e = e.Next() {
 						var item TopicItem
 						item = e.Value.(TopicItem)
 
@@ -97,46 +101,71 @@ func (t *Topic) topicController() {
 						cmd.topicReplyChannel <- results
 						//log.Println("Closed pull since")
 						close(cmd.topicReplyChannel)
-						delete(listeners, cmd.topicReplyChannel)
+						delete(pubOnceListeners, cmd.topicReplyChannel)
 					}
 
 				}
 
 			} else if cmd.Cmd == "unsubscribe" {
-				_, present := listeners[cmd.topicReplyChannel]
+				_, present := pubOnceListeners[cmd.topicReplyChannel]
 				if present {
-					//log.Println("unsubscribed")
+					log.Println("unsubscribed")
 					close(cmd.topicReplyChannel)
-					delete(listeners, cmd.topicReplyChannel)
+					delete(pubOnceListeners, cmd.topicReplyChannel)
 				} else {
-					//fmt.Println("Listener was already removed")
+					log.Println("Listener was already removed")
 				}
 
 			} else if cmd.Cmd == "pub" {
 
 				lastMessageId++
-				trimToMaxAge(items, t.item_max_age)
-				trimToSize(items, t.maxItemsLength)
 				item := TopicItem{MessageId: lastMessageId, Message: cmd.content, CreatedTime: time.Now()}
-				items.PushBack(item)
+				t.items.PushBack(item)
 
 				cmd.topicReplyChannel <- []TopicItem{item}
 
 				//fmt.Println("Publish", cmd.content)
-				for ch, subOnce := range listeners {
+				for ch, subOnce := range pubOnceListeners {
 					ch <- []TopicItem{item}
 					if subOnce {
 						close(ch)
-						delete(listeners, ch)
+						delete(pubOnceListeners, ch)
 					}
 
 				}
 			} else if cmd.Cmd == "lastMessageId" {
 				cmd.topicReplyChannel <- []TopicItem{{MessageId: lastMessageId}}
 			}
+		} // end of select
+	} // end of for
+}
 
+func (t *Topic) GC(){
+	if t.items.Len() > 0 {
+		trimToMaxAge(t.items, t.item_max_age)
+		trimToSize(t.items, t.maxItemsLength)
+	}
+
+}
+
+
+
+func trimToSize(l *list.List, size int) {
+	if l.Len() > size {
+		diff := l.Len() - size
+		for i := 0; i < diff; i++ {
+			l.Remove(l.Front()) // Remove the first item from the que
+		}
+	}
+}
+
+func trimToMaxAge(l *list.List, seconds int) {
+	for e := l.Front(); e != nil; e = e.Next() {
+		var item TopicItem
+		item = e.Value.(TopicItem)
+		if int(time.Since(item.CreatedTime).Seconds()) > seconds {
+			l.Remove(e)
 		}
 
 	}
-
 }
