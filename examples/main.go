@@ -8,14 +8,14 @@ package main
 
 import (
 	"fmt"
+	"github.com/AllYouCanAlex/pubysuby"
+	"github.com/gorilla/mux"
+	"html"
+	"log"
 	"net/http"
 	"net/url"
-	"html"
-	"strconv"
 	"runtime"
-	"./pubysuby"
-	"log"
-	"code.google.com/p/gorilla/mux"
+	"strconv"
 )
 
 var ps *pubysuby.PubySuby
@@ -34,7 +34,7 @@ func main() {
 	http.HandleFunc("/Push", HandlePush)
 	http.HandleFunc("/Sub", HandleSub)
 	http.HandleFunc("/LastMessageId", HandleLastMessageId)
-
+	fmt.Println("Listening on http://localhost:8080")
 	http.ListenAndServe("localhost:8080", nil)
 }
 
@@ -69,8 +69,16 @@ func HandleSub(w http.ResponseWriter, r *http.Request) {
 			break
 		}
 
+		fmt.Println("Send to browser " + updates[0].Message)
+
+		fmt.Fprintf(w, updates[0].Message)
+
+		if f, ok := w.(http.Flusher); ok {
+			f.Flush()
+		}
+
 		fmt.Println("Updates in sub:", updates)
-		if (i > 5) {
+		if i > 5 {
 			log.Println("After 5 updates, just gonna turn off the Sub")
 			break
 		}
