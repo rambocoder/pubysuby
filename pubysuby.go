@@ -2,6 +2,7 @@ package pubysuby
 
 import (
 	"time"
+	"log"
 )
 
 type PubySuby struct {
@@ -10,7 +11,7 @@ type PubySuby struct {
 }
 
 type hubRequest struct {
-	topic           string
+	topicName           string
 	hubReplyChannel chan chan topicRequest
 }
 
@@ -27,86 +28,121 @@ func NewPubySuby() *PubySuby {
 //	close(ps.hubRequests)
 //}
 
+type Subscription struct {
+	TopicName string
+	ListenChannel chan []TopicItem
+}
+
 // Subscribe to all new messages for a topic
-func (ps *PubySuby) Sub(topic string) chan []TopicItem {
+func (ps *PubySuby) Sub(topic string) *Subscription {
+
+
 
 	topicCommandChannel := ps.getTopicRequestChannel(topic)
 	////fmt.Println("Received topic channel back")
 	// once we have the topic channel, we have to send it our listener info
 	myListenChannel := make(chan []TopicItem)
 
-	topicCommandChannel <- topicRequest{Cmd: "sub", topicReplyChannel: myListenChannel}
+	topicCommandChannel <- topicRequest{Cmd: "sub", subscriberListenChannel: myListenChannel}
 
-	return myListenChannel
+	result := Subscription{
+		TopicName: topic,
+		ListenChannel:myListenChannel,
+	}
+	return &result
 
 }
 
-func (ps *PubySuby) Unsubscribe(topic string, myListenChannel chan []TopicItem) {
+//func (ps *PubySuby) SubWithStopChannel(topic string) (chan []TopicItem, chan int) {
+//
+//	topicCommandChannel := ps.getTopicRequestChannel(topic)
+//	////fmt.Println("Received topic channel back")
+//	// once we have the topic channel, we have to send it our listener info
+//	myListenChannel := make(chan []TopicItem)
+//
+//	stopProducingChannel := make(chan int)
+//	topicCommandChannel <- topicRequest{
+//		Cmd: "sub",
+//		topicReplyChannel: myListenChannel,
+//		stopProducingChannel: stopProducingChannel}
+//
+//	return myListenChannel, stopProducingChannel
+//
+//}
+
+func (ps *PubySuby) Unsubscribe(subscription *Subscription) {
+	topic := subscription.TopicName
+	myListenChannel := subscription.ListenChannel
+
 	topicCommandChannel := ps.getTopicRequestChannel(topic)
-	topicCommandChannel <- topicRequest{Cmd: "unsubscribe", topicReplyChannel: myListenChannel}
+	topicCommandChannel <- topicRequest{Cmd: "unsubscribe", subscriberListenChannel: myListenChannel}
 }
 
 // Pull all messages from the specified topic
-// If none are in the topic, blocks for the timeout duration in seconds until new message is published
+// If none are in the topic, blocks for the timeout duration in milliseconds until new message is published
 func (ps *PubySuby) Pull(topic string, timeout int64) []TopicItem {
+	if timeout < 1 {
+		timeout = 1
+	}
 
 	topicCommandChannel := ps.getTopicRequestChannel(topic)
 	// once we have the topic channel, we have to send it our listener info
 
 	myListenChannel := make(chan []TopicItem)
 
-	topicCommandChannel <- topicRequest{Cmd: "pull", topicReplyChannel: myListenChannel}
-	var reply []TopicItem
+	topicCommandChannel <- topicRequest{Cmd: "pull", subscriberListenChannel: myListenChannel}
+	var receivedMessages []TopicItem
 	select {
 	case results, ok := <-myListenChannel:
 		if !ok {
-			reply = nil
+			receivedMessages = nil
 			//log.Fatalf("PullOnceWithTimeout melted down")
 		} else {
-			reply = results
+			receivedMessages = results
 		}
-	case <-time.After(time.Second * time.Duration(timeout)):
-		topicCommandChannel <- topicRequest{Cmd: "unsubscribe", topicReplyChannel: myListenChannel}
+	case <-time.After(time.Millisecond * time.Duration(timeout)):
+		topicCommandChannel <- topicRequest{Cmd: "unsubscribe", subscriberListenChannel: myListenChannel}
 		//log.Println(topic, "Timedout")
-		reply = nil
+		receivedMessages = nil
 	}
-	return reply
+	return receivedMessages
 }
 
 // Pull all messages from the specified topic
 // If none are in the topic, blocks for the timeout duration in seconds until new message is published
 func (ps *PubySuby) PullSince(topic string, timeout int64, since int64) []TopicItem {
+	if (timeout < 1) {
+		timeout = 1
+	}
 	myListenChannel := make(chan []TopicItem)
 
 	topicCommandChannel := ps.getTopicRequestChannel(topic)
 	// once we have the topic channel, we have to send it our listener info
-	topicCommandChannel <- topicRequest{Cmd: "pullsince", topicReplyChannel: myListenChannel, since: since}
-	var reply []TopicItem
+	topicCommandChannel <- topicRequest{Cmd: "pullsince", subscriberListenChannel: myListenChannel, since: since}
+	var receivedMessages []TopicItem
 	select {
 	case results, ok := <-myListenChannel:
 		if !ok {
-			reply = nil
+			receivedMessages = nil
 			//log.Fatalf("PullSince melted down")
 		} else {
-			reply = results
+			receivedMessages = results
 		}
-	case <-time.After(time.Second * time.Duration(timeout)):
-		topicCommandChannel <- topicRequest{Cmd: "unsubscribe", topicReplyChannel: myListenChannel}
+	case <-time.After(time.Millisecond * time.Duration(timeout)):
+		topicCommandChannel <- topicRequest{Cmd: "unsubscribe", subscriberListenChannel: myListenChannel}
 		//log.Println(topic, "Timedout")
-		reply = nil
 	}
-	return reply
+	return receivedMessages
 }
 
 // Publishes the message to the topic and returns the message id
 func (ps *PubySuby) Push(topic string, message string) int64 {
 	topicCommandChannel := ps.getTopicRequestChannel(topic)
 	myListenChannel := make(chan []TopicItem)
-	topicCommandChannel <- topicRequest{Cmd: "pub", content: message, topicReplyChannel: myListenChannel}
+	topicCommandChannel <- topicRequest{Cmd: "pub", content: message, subscriberListenChannel: myListenChannel}
 	results, ok := <-myListenChannel
 	if !ok {
-		//fmt.Println(topic + "got closed explicitly in wait stage")
-		return 0
+		log.Fatal("Blew up during Push because myListenChannel was closed")
 	}
 	return results[0].MessageId
 }
@@ -119,11 +155,12 @@ func (ps *PubySuby) LastMessageId(topic string) int64 {
 	// once we have the topic channel, we have to send it our listener info
 	myListenChannel := make(chan []TopicItem)
 
-	topicCommandChannel <- topicRequest{Cmd: "lastMessageId", topicReplyChannel: myListenChannel}
+	topicCommandChannel <- topicRequest{Cmd: "lastMessageId", subscriberListenChannel: myListenChannel}
 
 	results, ok := <-myListenChannel
 	if !ok {
 		//fmt.Println(topic + "got closed explicitly in wait stage")
+		log.Println("CLosed here")
 		return 0
 	}
 	return results[0].MessageId
@@ -138,15 +175,15 @@ func (ps *PubySuby) hubController() {
 
 		// see if a channel for a topic name exists
 		////fmt.Println("Fetch", req.topic)
-		if topics[req.topic] == nil {
+		if topics[req.topicName] == nil {
 			// Add the following channel to the topic
-			t := NewTopic(req.topic)
-			topics[req.topic] = t
+			t := NewTopic(req.topicName)
+			topics[req.topicName] = t
 			// Send new topic channel info to the reply channel
 			req.hubReplyChannel <- t.CommandChannel
 		} else {
 			// Send an existing topic channel to the reply channel
-			req.hubReplyChannel <- topics[req.topic].CommandChannel
+			req.hubReplyChannel <- topics[req.topicName].CommandChannel
 		}
 	}
 }
@@ -156,7 +193,7 @@ func (ps *PubySuby) getTopicRequestChannel(topicName string) chan topicRequest {
 	reply := make(chan chan topicRequest)
 
 	// Send the request to receive our topic
-	ps.hubRequests <- hubRequest{topic: topicName, hubReplyChannel: reply}
+	ps.hubRequests <- hubRequest{topicName: topicName, hubReplyChannel: reply}
 
 	// Receive the reply
 	topicCommandChannel := <-reply

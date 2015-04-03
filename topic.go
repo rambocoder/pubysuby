@@ -135,6 +135,7 @@ func (t *Topic) topicController() {
 				}
 			} else if cmd.Cmd == "lastMessageId" {
 				cmd.subscriberListenChannel <- []TopicItem{{MessageId: lastMessageId}}
+				close(cmd.subscriberListenChannel)
 			}
 		} // end of select
 	} // end of for
