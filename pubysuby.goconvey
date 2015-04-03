@@ -2,3 +2,6 @@
 
 // just like "go test -race -v"
 -race
+-covermode=atomic
+
+-parallel=10

@@ -7,19 +7,19 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
-	"github.com/rambocoder/pubysuby"
 	"github.com/gorilla/mux"
+	"github.com/rambocoder/pubysuby"
 	"html"
+	"io"
+	"io/ioutil"
 	"log"
 	"net/http"
 	"net/url"
+	"os"
 	"runtime"
 	"strconv"
-	"os"
-	"io"
-	"encoding/json"
-	"io/ioutil"
 )
 
 var ps *pubysuby.PubySuby
@@ -43,7 +43,7 @@ func main() {
 	http.HandleFunc("/chat/start", HandleLastMessageId)
 	http.HandleFunc("/chat/push", HandlePushJson)
 	fmt.Println("Listening on http://localhost:8888")
-	http.ListenAndServe("localhost:8888", nil)
+	http.ListenAndServe("192.168.1.26:8888", nil)
 }
 
 func HomeHandler(w http.ResponseWriter, r *http.Request) {
@@ -112,7 +112,6 @@ func HandlePull(w http.ResponseWriter, r *http.Request) {
 
 	wait, _ := strconv.ParseInt(timeout, 10, 64)
 
-
 	var messages []pubysuby.TopicItem
 	messages = ps.Pull(topicName, wait)
 
@@ -122,18 +121,14 @@ func HandlePull(w http.ResponseWriter, r *http.Request) {
 
 }
 
-
-
 func HandleLastMessageId(w http.ResponseWriter, r *http.Request) {
 
 	// topic name here is hardcoded to test
 	fmt.Printf("Last Message Id is: %d on topic: %s \n", ps.LastMessageId("test"), html.EscapeString("test"))
 
-	fmt.Fprintf(w, `{"LastMessageId":"%s"}`,  strconv.FormatInt(ps.LastMessageId("test"), 10) )
+	fmt.Fprintf(w, `{"LastMessageId":"%s"}`, strconv.FormatInt(ps.LastMessageId("test"), 10))
 
 }
-
-
 
 func HandlePushJson(w http.ResponseWriter, r *http.Request) {
 	//topicName := r.FormValue("topic")
@@ -150,14 +145,13 @@ func HandlePushJson(w http.ResponseWriter, r *http.Request) {
 		log.Fatal(err)
 	}
 
-
 	//json.NewDecoder(r.Body).Decode(&m)
 
 	fmt.Println("Message is: " + m.Message)
 
 	fmt.Fprintf(w, `{"ok":"true"}`)
 
-	fmt.Printf( "That Message Id is: %d on topic: %q \n", ps.Push("test", m.Message), "test")
+	fmt.Printf("That Message Id is: %d on topic: %q \n", ps.Push("test", m.Message), "test")
 }
 
 type Message struct {
@@ -182,7 +176,7 @@ func HandlePullSince(w http.ResponseWriter, r *http.Request) {
 
 			fmt.Fprintf(w, `{"ok":{"text":"%s"}, "timestamp":"%d"}`, v.Message, v.MessageId)
 		}
-	}else {
+	} else {
 		fmt.Printf(`{"ok":"timeout", "timestamp":"%d"}\n`, lastMessageId)
 		fmt.Fprintf(w, `{"ok":"timeout", "timestamp":"%d"}`, lastMessageId)
 	}

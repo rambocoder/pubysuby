@@ -1,13 +1,11 @@
 package pubysuby
 
 import (
+	"github.com/stretchr/testify/assert"
 	"runtime"
 	"strconv"
 	"testing"
 	"time"
-
-	"fmt"
-	"github.com/stretchr/testify/assert"
 )
 
 func TestSubDeath(t *testing.T) {
@@ -25,7 +23,6 @@ func TestSubDeath(t *testing.T) {
 		<-ch
 	}()
 	<-time.After(time.Second * 1)
-	fmt.Println("Finished TestSubDeath")
 }
 
 func TestUnsubscribe2(t *testing.T) {
@@ -46,7 +43,6 @@ func TestUnsubscribe2(t *testing.T) {
 		<-ch
 	}()
 	<-time.After(time.Second * 1)
-	fmt.Println("Finished TestUnsubscribe")
 }
 
 func TestSub(t *testing.T) {
@@ -70,7 +66,7 @@ func TestSub(t *testing.T) {
 		}(y)
 	}
 	<-time.After(time.Second * 1)
-	fmt.Println("Finished TestSub")
+
 }
 
 func TestPullZeroTimeout(t *testing.T) {
@@ -100,7 +96,6 @@ func TestPullZeroTimeout(t *testing.T) {
 
 	}()
 	<-time.After(time.Second * 1)
-	fmt.Println("Finished TestPullZeroTimeout")
 }
 
 func TestPull(t *testing.T) {
@@ -150,8 +145,7 @@ func TestPullExplicitClose(t *testing.T) {
 }
 
 func TestPullSince(t *testing.T) {
-	runtime.GOMAXPROCS(4)
-
+	t.Parallel()
 	ps := NewPubySuby()
 	lastMessageId := ps.Push("Test", "one")
 	assert.Equal(t, lastMessageId, ps.LastMessageId("Test"))
@@ -166,9 +160,10 @@ func TestPullSince(t *testing.T) {
 		t.Error("Expected 0 messages, got ", len(results))
 	}
 	ps.Push("Test", "three")
-	messages := ps.Pull("Test", 0)
+	messages := ps.Pull("Test", 1)
 	if len(messages) != 3 {
 		t.Error("Expected 3 messages, got ", len(messages))
 	}
+	ps.Push("Test", "three")
 
 }

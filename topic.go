@@ -1,9 +1,9 @@
 package pubysuby
 
 import (
-	"time"
 	"container/list"
 	"log"
+	"time"
 )
 
 type topicRequest struct {
@@ -25,18 +25,18 @@ type Topic struct {
 	item_max_age   int
 	maxItemsLength int
 	CommandChannel chan topicRequest
-	items *list.List
+	items          *list.List
 }
 
 func NewTopic(topicName string) *Topic {
 	ch := make(chan topicRequest)
 	t := Topic{
 		CommandChannel: ch,
-		globalTimeOut: 30,
-		topicName: topicName,
-		item_max_age: 70,
+		globalTimeOut:  30,
+		topicName:      topicName,
+		item_max_age:   70,
 		maxItemsLength: 5,
-		items: list.New(),
+		items:          list.New(),
 	}
 	go t.topicController()
 	return &t
@@ -109,11 +109,11 @@ func (t *Topic) topicController() {
 			} else if cmd.Cmd == "unsubscribe" {
 				_, present := pubOnceListeners[cmd.topicReplyChannel]
 				if present {
-					log.Println("unsubscribed")
+					// log.Println("unsubscribed")
 					close(cmd.topicReplyChannel)
 					delete(pubOnceListeners, cmd.topicReplyChannel)
 				} else {
-					log.Println("Listener was already removed")
+					log.Panicln("Listener was already removed")
 				}
 
 			} else if cmd.Cmd == "pub" {
@@ -140,15 +140,13 @@ func (t *Topic) topicController() {
 	} // end of for
 }
 
-func (t *Topic) GC(){
+func (t *Topic) GC() {
 	if t.items.Len() > 0 {
 		trimToMaxAge(t.items, t.item_max_age)
 		trimToSize(t.items, t.maxItemsLength)
 	}
 
 }
-
-
 
 func trimToSize(l *list.List, size int) {
 	if l.Len() > size {
