@@ -2,13 +2,15 @@ package pubysuby
 
 import (
 	"container/list"
-	"log"
+	//"log"
 	"time"
+	"log"
+	"strconv"
 )
 
 type topicRequest struct {
 	Cmd               string           // can be "sub" "subonce" "unsubscribe" "pub", "now"
-	topicReplyChannel chan []TopicItem // filled in during "sub", "unsubscribe", "now"
+	subscriberListenChannel chan []TopicItem // filled in during "sub", "unsubscribe", "now"
 	content           string           // message during "pub"
 	since             int64            // messageId during "pullsince"
 }
@@ -25,7 +27,7 @@ type Topic struct {
 	item_max_age   int
 	maxItemsLength int
 	CommandChannel chan topicRequest
-	items          *list.List
+	messages          *list.List
 }
 
 func NewTopic(topicName string) *Topic {
@@ -34,9 +36,9 @@ func NewTopic(topicName string) *Topic {
 		CommandChannel: ch,
 		globalTimeOut:  30,
 		topicName:      topicName,
-		item_max_age:   70,
-		maxItemsLength: 5,
-		items:          list.New(),
+		item_max_age:   1,
+		maxItemsLength: 100,
+		messages:          list.New(),
 	}
 	go t.topicController()
 	return &t
@@ -60,110 +62,111 @@ func (t *Topic) topicController() {
 			if cmd.Cmd == "sub" {
 
 				//log.Println("Subscribed")
-				pubOnceListeners[cmd.topicReplyChannel] = false
+				pubOnceListeners[cmd.subscriberListenChannel] = false
 
 			} else if cmd.Cmd == "pull" {
 
 				//log.Println("Started pull")
-				pubOnceListeners[cmd.topicReplyChannel] = true
-				if t.items.Len() > 0 {
+				pubOnceListeners[cmd.subscriberListenChannel] = true
+				if t.messages.Len() > 0 {
 
-					results := make([]TopicItem, 0, t.items.Len())
-					for e := t.items.Front(); e != nil; e = e.Next() {
+					results := make([]TopicItem, 0, t.messages.Len())
+					for e := t.messages.Front(); e != nil; e = e.Next() {
 						var item TopicItem
 						item = e.Value.(TopicItem)
 						results = append(results, item)
 					}
-					cmd.topicReplyChannel <- results
+					cmd.subscriberListenChannel <- results
 					//log.Println("Closed pull")
 					// close it so that pull receive stops
-					close(cmd.topicReplyChannel)
-					delete(pubOnceListeners, cmd.topicReplyChannel)
+					delete(pubOnceListeners, cmd.subscriberListenChannel)
+					close(cmd.subscriberListenChannel)
+
 				}
 
 			} else if cmd.Cmd == "pullsince" {
 
 				//log.Println("Started pullsince: ", cmd.since)
-				pubOnceListeners[cmd.topicReplyChannel] = true
-				if t.items.Len() > 0 {
 
-					results := make([]TopicItem, 0, t.items.Len())
-					for e := t.items.Front(); e != nil; e = e.Next() {
+				pubOnceListeners[cmd.subscriberListenChannel] = true
+				// check if there is any data to send on the initial subscription
+				if t.messages.Len() > 0 {
+					results := make([]TopicItem, 0, t.messages.Len())
+					for e := t.messages.Front(); e != nil; e = e.Next() {
 						var item TopicItem
 						item = e.Value.(TopicItem)
 
 						if item.MessageId > cmd.since {
 							results = append(results, item)
 						}
-
 					}
 					if len(results) > 0 {
-						cmd.topicReplyChannel <- results
+						cmd.subscriberListenChannel <- results
 						//log.Println("Closed pull since")
-						close(cmd.topicReplyChannel)
-						delete(pubOnceListeners, cmd.topicReplyChannel)
+						delete(pubOnceListeners, cmd.subscriberListenChannel)
+						// TODO: Does this really notify the subscriber that no more data is coming?
+						close(cmd.subscriberListenChannel)
 					}
-
 				}
-
 			} else if cmd.Cmd == "unsubscribe" {
-				_, present := pubOnceListeners[cmd.topicReplyChannel]
+				_, present := pubOnceListeners[cmd.subscriberListenChannel]
 				if present {
-					// log.Println("unsubscribed")
-					close(cmd.topicReplyChannel)
-					delete(pubOnceListeners, cmd.topicReplyChannel)
-				} else {
-					log.Panicln("Listener was already removed")
+					//log.Println("unsubscribed")
+					delete(pubOnceListeners, cmd.subscriberListenChannel)
+					// TODO: Does this really notify the subscriber that no more data is coming?
+					close(cmd.subscriberListenChannel)
 				}
 
 			} else if cmd.Cmd == "pub" {
 
 				lastMessageId++
 				item := TopicItem{MessageId: lastMessageId, Message: cmd.content, CreatedTime: time.Now()}
-				t.items.PushBack(item)
+				t.messages.PushBack(item)
 
-				cmd.topicReplyChannel <- []TopicItem{item}
+				cmd.subscriberListenChannel <- []TopicItem{item}
 
 				//fmt.Println("Publish", cmd.content)
 				for ch, subOnce := range pubOnceListeners {
 					ch <- []TopicItem{item}
 					if subOnce {
-						close(ch)
 						delete(pubOnceListeners, ch)
+						close(ch)
 					}
-
 				}
 			} else if cmd.Cmd == "lastMessageId" {
-				cmd.topicReplyChannel <- []TopicItem{{MessageId: lastMessageId}}
+				cmd.subscriberListenChannel <- []TopicItem{{MessageId: lastMessageId}}
 			}
 		} // end of select
 	} // end of for
 }
 
 func (t *Topic) GC() {
-	if t.items.Len() > 0 {
-		trimToMaxAge(t.items, t.item_max_age)
-		trimToSize(t.items, t.maxItemsLength)
+	// TODO: If the topic is too busy, GC based on <-timeafter will not kick in
+	messagesCount := t.messages.Len()
+	if messagesCount > 0 {
+		log.Println("GC due to messages Count: " + strconv.Itoa(messagesCount))
+		t.trimToMaxAge()
+		t.trimToSize()
 	}
 
 }
 
-func trimToSize(l *list.List, size int) {
-	if l.Len() > size {
-		diff := l.Len() - size
+func (t *Topic) trimToSize() {
+	messagesCount := t.messages.Len()
+	if messagesCount > t.maxItemsLength {
+		diff := messagesCount - t.maxItemsLength
 		for i := 0; i < diff; i++ {
-			l.Remove(l.Front()) // Remove the first item from the que
+			t.messages.Remove(t.messages.Front()) // Remove the first item from the que
 		}
 	}
 }
 
-func trimToMaxAge(l *list.List, seconds int) {
-	for e := l.Front(); e != nil; e = e.Next() {
+func (t *Topic)trimToMaxAge() {
+	for e := t.messages.Front(); e != nil; e = e.Next() {
 		var item TopicItem
 		item = e.Value.(TopicItem)
-		if int(time.Since(item.CreatedTime).Seconds()) > seconds {
-			l.Remove(e)
+		if int(time.Since(item.CreatedTime).Seconds()) > t.item_max_age {
+			t.messages.Remove(e)
 		}
-
 	}
 }

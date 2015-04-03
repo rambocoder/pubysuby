@@ -22,7 +22,7 @@ jQuery(document).ready(function($) {
 	$('#chatForm').bind({
 		'pull': function() {
 			$.ajax({
-				url: pullUrl + "?since=" + timestamp + "&timeout=5&topic=test",
+				url: pullUrl + "?since=" + timestamp + "&timeout=5000&topic=test",
 				dataType: "json",
 				method: "GET",
 				success: function(data) {

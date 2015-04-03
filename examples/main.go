@@ -20,6 +20,7 @@ import (
 	"os"
 	"runtime"
 	"strconv"
+	"time"
 )
 
 var ps *pubysuby.PubySuby
@@ -39,11 +40,11 @@ func main() {
 	http.HandleFunc("/pull/", HandlePull)
 	http.HandleFunc("/chat/pullsince", HandlePullSince)
 	http.HandleFunc("/Push", HandlePush)
-	http.HandleFunc("/Sub", HandleSub)
+	http.HandleFunc("/chat/sub", HandleSub)
 	http.HandleFunc("/chat/start", HandleLastMessageId)
 	http.HandleFunc("/chat/push", HandlePushJson)
 	fmt.Println("Listening on http://localhost:8888")
-	http.ListenAndServe("192.168.1.26:8888", nil)
+	http.ListenAndServe("localhost:8888", nil)
 }
 
 func HomeHandler(w http.ResponseWriter, r *http.Request) {
@@ -72,36 +73,42 @@ func getQuery(r *http.Request, name string) string {
 }
 
 func HandleSub(w http.ResponseWriter, r *http.Request) {
-	myListenChannel := ps.Sub("test")
-	defer ps.Unsubscribe("test", myListenChannel)
+	subscription := ps.Sub("test")
+	defer ps.Unsubscribe(subscription)
 	// Ideal API for pubysuby
 	// subscription := ps.Sub("test")
 	// defer subscription.Unsubscribe()
 	// <- subscription.inChan
 	i := 0
 	for {
-		i++
-		updates, ok := <-myListenChannel
-		if !ok {
-			log.Println("Updates melted down")
-			ps.Unsubscribe("test", myListenChannel)
-			break
+		select {
+		case <-time.After(time.Second * 10):
+			fmt.Fprintf(w, "Subscription timedout")
+			return
+
+		case updates, ok := <-subscription.ListenChannel:
+			i++
+			if !ok {
+				log.Println("Updates melted down")
+				return
+			}
+
+			fmt.Println("Send to browser " + updates[0].Message)
+
+			fmt.Fprintf(w, updates[0].Message)
+
+			if f, ok := w.(http.Flusher); ok {
+				f.Flush()
+			}
+
+			fmt.Println("Updates in sub:", updates)
+			if i > 5 {
+				log.Println("After 5 updates, just gonna turn off the Sub")
+				return
+			}
+			fmt.Fprintf(w, "Message Id: %d is: %q on topic: %q \n", updates[0].MessageId, updates[0].Message, html.EscapeString("test"))
 		}
 
-		fmt.Println("Send to browser " + updates[0].Message)
-
-		fmt.Fprintf(w, updates[0].Message)
-
-		if f, ok := w.(http.Flusher); ok {
-			f.Flush()
-		}
-
-		fmt.Println("Updates in sub:", updates)
-		if i > 5 {
-			log.Println("After 5 updates, just gonna turn off the Sub")
-			break
-		}
-		fmt.Fprintf(w, "Message Id: %d is: %q on topic: %q \n", updates[0].MessageId, updates[0].Message, html.EscapeString("test"))
 	}
 }
 
