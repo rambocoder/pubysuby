@@ -3,16 +3,16 @@ package pubysuby
 import (
 	"container/list"
 	//"log"
+	//"log"
+	//"strconv"
 	"time"
-	"log"
-	"strconv"
 )
 
 type topicRequest struct {
-	Cmd               string           // can be "sub" "subonce" "unsubscribe" "pub", "now"
+	Cmd                     string           // can be "sub" "subonce" "unsubscribe" "pub", "now"
 	subscriberListenChannel chan []TopicItem // filled in during "sub", "unsubscribe", "now"
-	content           string           // message during "pub"
-	since             int64            // messageId during "pullsince"
+	content                 string           // message during "pub"
+	since                   int64            // messageId during "pullsince"
 }
 
 type TopicItem struct {
@@ -27,7 +27,7 @@ type Topic struct {
 	item_max_age   int
 	maxItemsLength int
 	CommandChannel chan topicRequest
-	messages          *list.List
+	messages       *list.List
 }
 
 func NewTopic(topicName string) *Topic {
@@ -38,7 +38,7 @@ func NewTopic(topicName string) *Topic {
 		topicName:      topicName,
 		item_max_age:   1,
 		maxItemsLength: 100,
-		messages:          list.New(),
+		messages:       list.New(),
 	}
 	go t.topicController()
 	return &t
@@ -76,10 +76,11 @@ func (t *Topic) topicController() {
 						item = e.Value.(TopicItem)
 						results = append(results, item)
 					}
+					delete(pubOnceListeners, cmd.subscriberListenChannel)
 					cmd.subscriberListenChannel <- results
 					//log.Println("Closed pull")
 					// close it so that pull receive stops
-					delete(pubOnceListeners, cmd.subscriberListenChannel)
+
 					close(cmd.subscriberListenChannel)
 
 				}
@@ -101,9 +102,10 @@ func (t *Topic) topicController() {
 						}
 					}
 					if len(results) > 0 {
+
+						delete(pubOnceListeners, cmd.subscriberListenChannel)
 						cmd.subscriberListenChannel <- results
 						//log.Println("Closed pull since")
-						delete(pubOnceListeners, cmd.subscriberListenChannel)
 						// TODO: Does this really notify the subscriber that no more data is coming?
 						close(cmd.subscriberListenChannel)
 					}
@@ -145,7 +147,7 @@ func (t *Topic) GC() {
 	// TODO: If the topic is too busy, GC based on <-timeafter will not kick in
 	messagesCount := t.messages.Len()
 	if messagesCount > 0 {
-		log.Println("GC due to messages Count: " + strconv.Itoa(messagesCount))
+		//log.Println("GC due to messages Count: " + strconv.Itoa(messagesCount))
 		t.trimToMaxAge()
 		t.trimToSize()
 	}
@@ -162,7 +164,7 @@ func (t *Topic) trimToSize() {
 	}
 }
 
-func (t *Topic)trimToMaxAge() {
+func (t *Topic) trimToMaxAge() {
 	for e := t.messages.Front(); e != nil; e = e.Next() {
 		var item TopicItem
 		item = e.Value.(TopicItem)

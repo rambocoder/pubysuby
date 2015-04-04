@@ -4,15 +4,104 @@ import (
 	"fmt"
 	"github.com/stretchr/testify/assert"
 	"log"
+	"math/rand"
 	"runtime"
 	"strconv"
 	"testing"
 	"time"
 )
-/*
+
+func TestPull(t *testing.T) {
+	runtime.GOMAXPROCS(16)
+	t.Parallel()
+	//	t.SkipNow()
+	ps := NewPubySuby()
+	done := make(chan int)
+	// generate 100 listeners
+	// each one listens for 100 milliseconds
+	for i := 0; i < 1000; i++ {
+		go func(i int) {
+			messages := ps.Pull("TestPull", int64(i))
+			if len(messages) == 0 {
+				//t.Error("Expected to pull a message, instead got nothing")
+			} else if messages[0].Message != "hello from test" {
+				t.Error("Expected hello from test got ", messages[0].Message)
+			}
+		}(i)
+	}
+	// push a message to all 100 listeners
+	// each one should receive the message
+	// a fan-out process
+
+	for i := 1; i < 1000; i++ {
+
+		go func(i int) {
+			<-time.After(time.Millisecond * time.Duration(rand.Intn(i)))
+			ps.Push("TestPull", "hello from test")
+			<-time.After(time.Millisecond * time.Duration(rand.Intn(i)))
+			ps.Pull("TestPull", int64(i))
+			<-time.After(time.Millisecond * time.Duration(rand.Intn(i)))
+			ps.Push("TestPull", "hello from test")
+			<-time.After(time.Millisecond * time.Duration(rand.Intn(i)))
+			if i == 999 {
+				close(done)
+			}
+		}(i)
+
+	}
+	<-done
+	// give it more time in case the goroutines are scheduled at random
+	<-time.After(time.Second * 5)
+
+	messageId := ps.Push("TestPull", "hello from test")
+	assert.Equal(t, messageId, ps.LastMessageId("TestPull"))
+
+	// check that there is no other messages on the que
+	remainingMessages := ps.PullSince("TestPull", 1, messageId)
+	assert.Equal(t, len(remainingMessages), 0)
+
+	//<-time.After(time.Second * 5)
+}
+
+func TestSubWithTimeout(t *testing.T) {
+	t.Parallel()
+	runtime.GOMAXPROCS(16)
+
+	ps := NewPubySuby()
+
+	subscription := ps.Sub("Test")
+
+	go func() {
+		defer drainRemaining(subscription.ListenChannel)
+		select {
+		case val := <-subscription.ListenChannel:
+			log.Println("Received", val)
+		case <-time.After(time.Second * 1):
+			// call timed out
+			log.Println("Timedout")
+		}
+
+	}()
+	done := make(chan int)
+	go func() {
+		ps.Push("Test", "one")
+		ps.Push("Test", "two")
+		//fmt.Println("Start unsubscribe")
+		//ps.Unsubscribe(subscription)
+		//fmt.Println("End unsubscribe")
+		ps.Push("Test", "three")
+		ps.Push("Test", "four")
+		log.Println("sent FOUR")
+		close(done)
+	}()
+	<-done
+	//<-time.After(time.Second * 5)
+
+}
+
 func TestSub(t *testing.T) {
 	t.Parallel()
-	runtime.GOMAXPROCS(4)
+	runtime.GOMAXPROCS(16)
 
 	ps := NewPubySuby()
 
@@ -73,7 +162,7 @@ func TestSub(t *testing.T) {
 }
 
 func TestUnsubscribeManyTimes(t *testing.T) {
-	runtime.GOMAXPROCS(4)
+	runtime.GOMAXPROCS(16)
 	t.Parallel()
 	//t.SkipNow()
 	ps := NewPubySuby()
@@ -93,7 +182,7 @@ func TestUnsubscribeManyTimes(t *testing.T) {
 			select {
 			case <-time.After(time.Second * 1):
 				ps.Unsubscribe(subscription)
-			case _, _ = <- subscription.ListenChannel:
+			case _, _ = <-subscription.ListenChannel:
 
 			}
 		}
@@ -112,39 +201,17 @@ func TestUnsubscribeManyTimes(t *testing.T) {
 		}
 	}
 }
-*/
-func TestPull(t *testing.T) {
-	runtime.GOMAXPROCS(4)
-	t.Parallel()
-	//t.SkipNow()
-	ps := NewPubySuby()
-	// generate 100 listeners
-	// each one listens for 100 milliseconds
-	for i := 0; i < 1000; i++ {
-		go func() {
-			messages := ps.Pull("TestPull", 100)
-			if len(messages) == 0 {
-				//t.Error("Expected to pull a message, instead got nothing")
-			}else if messages[0].Message != "hello from test" {
-				t.Error("Expected hello from test got ", messages[0].Message)
-			}
-		}()
-	}
-	// push a message to all 100 listeners
-	// each one should receive the message
-	// a fan-out process
-	messageId := ps.Push("TestPull", "hello from test")
-	assert.Equal(t, messageId, ps.LastMessageId("TestPull"))
 
-	// check that there is no other messages on the que
-	remainingMessages := ps.PullSince("TestPull", 1, messageId)
-	assert.Equal(t, len(remainingMessages), 0)
+//func TestX(t *testing.T) {
+//	runtime.GOMAXPROCS(16)
+//	t.Parallel()
+//	in := make(chan int)
+//	in <- 0
+//}
 
-	<-time.After(time.Millisecond * 5000)
-}
-/*
 func TestTimeout(t *testing.T) {
-	runtime.GOMAXPROCS(4)
+	runtime.GOMAXPROCS(16)
+	t.Parallel()
 	//t.SkipNow()
 	done := make(chan int)
 	go func() {
@@ -159,7 +226,8 @@ func TestTimeout(t *testing.T) {
 }
 
 func TestPullExplicitClose(t *testing.T) {
-	runtime.GOMAXPROCS(4)
+	runtime.GOMAXPROCS(16)
+	t.Parallel()
 	//t.SkipNow()
 	done := make(chan int)
 	go func() {
@@ -177,9 +245,9 @@ func TestPullExplicitClose(t *testing.T) {
 }
 
 func TestPullSinceAndGC(t *testing.T) {
-	//t.Parallel()
+	t.Parallel()
 	//t.SkipNow()
-	runtime.GOMAXPROCS(4)
+	runtime.GOMAXPROCS(16)
 
 	ps := NewPubySuby()
 	lastMessageId := ps.Push("Test", "one")
@@ -199,7 +267,6 @@ func TestPullSinceAndGC(t *testing.T) {
 	}()
 	<-time.After(time.Second * 5)
 }
-*/
 
 func unused_imports() {
 	var _ = fmt.Printf

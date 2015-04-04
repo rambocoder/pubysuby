@@ -1,8 +1,8 @@
 package pubysuby
 
 import (
-	"time"
 	"log"
+	"time"
 )
 
 type PubySuby struct {
@@ -11,7 +11,7 @@ type PubySuby struct {
 }
 
 type hubRequest struct {
-	topicName           string
+	topicName       string
 	hubReplyChannel chan chan topicRequest
 }
 
@@ -29,14 +29,12 @@ func NewPubySuby() *PubySuby {
 //}
 
 type Subscription struct {
-	TopicName string
+	TopicName     string
 	ListenChannel chan []TopicItem
 }
 
 // Subscribe to all new messages for a topic
 func (ps *PubySuby) Sub(topic string) *Subscription {
-
-
 
 	topicCommandChannel := ps.getTopicRequestChannel(topic)
 	////fmt.Println("Received topic channel back")
@@ -46,8 +44,8 @@ func (ps *PubySuby) Sub(topic string) *Subscription {
 	topicCommandChannel <- topicRequest{Cmd: "sub", subscriberListenChannel: myListenChannel}
 
 	result := Subscription{
-		TopicName: topic,
-		ListenChannel:myListenChannel,
+		TopicName:     topic,
+		ListenChannel: myListenChannel,
 	}
 	return &result
 
@@ -71,11 +69,8 @@ func (ps *PubySuby) Sub(topic string) *Subscription {
 //}
 
 func (ps *PubySuby) Unsubscribe(subscription *Subscription) {
-	topic := subscription.TopicName
-	myListenChannel := subscription.ListenChannel
-
-	topicCommandChannel := ps.getTopicRequestChannel(topic)
-	topicCommandChannel <- topicRequest{Cmd: "unsubscribe", subscriberListenChannel: myListenChannel}
+	topicCommandChannel := ps.getTopicRequestChannel(subscription.TopicName)
+	topicCommandChannel <- topicRequest{Cmd: "unsubscribe", subscriberListenChannel: subscription.ListenChannel}
 }
 
 // Pull all messages from the specified topic
@@ -84,26 +79,26 @@ func (ps *PubySuby) Pull(topic string, timeout int64) []TopicItem {
 	if timeout < 1 {
 		timeout = 1
 	}
-
+	myListenChannel := make(chan []TopicItem)
+	defer drainRemaining(myListenChannel)
 	topicCommandChannel := ps.getTopicRequestChannel(topic)
 	// once we have the topic channel, we have to send it our listener info
 
-	myListenChannel := make(chan []TopicItem)
-
 	topicCommandChannel <- topicRequest{Cmd: "pull", subscriberListenChannel: myListenChannel}
+
 	var receivedMessages []TopicItem
 	select {
 	case results, ok := <-myListenChannel:
 		if !ok {
-			receivedMessages = nil
-			//log.Fatalf("PullOnceWithTimeout melted down")
+			log.Fatalf("PullOnceWithTimeout melted down")
 		} else {
 			receivedMessages = results
 		}
 	case <-time.After(time.Millisecond * time.Duration(timeout)):
-		topicCommandChannel <- topicRequest{Cmd: "unsubscribe", subscriberListenChannel: myListenChannel}
-		//log.Println(topic, "Timedout")
-		receivedMessages = nil
+		go func() {
+			topicCommandChannel <- topicRequest{Cmd: "unsubscribe", subscriberListenChannel: myListenChannel}
+		}()
+
 	}
 	return receivedMessages
 }
@@ -111,10 +106,11 @@ func (ps *PubySuby) Pull(topic string, timeout int64) []TopicItem {
 // Pull all messages from the specified topic
 // If none are in the topic, blocks for the timeout duration in seconds until new message is published
 func (ps *PubySuby) PullSince(topic string, timeout int64, since int64) []TopicItem {
-	if (timeout < 1) {
+	if timeout < 1 {
 		timeout = 1
 	}
 	myListenChannel := make(chan []TopicItem)
+	defer drainRemaining(myListenChannel)
 
 	topicCommandChannel := ps.getTopicRequestChannel(topic)
 	// once we have the topic channel, we have to send it our listener info
@@ -123,13 +119,14 @@ func (ps *PubySuby) PullSince(topic string, timeout int64, since int64) []TopicI
 	select {
 	case results, ok := <-myListenChannel:
 		if !ok {
-			receivedMessages = nil
-			//log.Fatalf("PullSince melted down")
+			log.Fatal("Blew up during PullSince because myListenChannel was closed")
 		} else {
 			receivedMessages = results
 		}
 	case <-time.After(time.Millisecond * time.Duration(timeout)):
-		topicCommandChannel <- topicRequest{Cmd: "unsubscribe", subscriberListenChannel: myListenChannel}
+		go func() {
+			topicCommandChannel <- topicRequest{Cmd: "unsubscribe", subscriberListenChannel: myListenChannel}
+		}()
 		//log.Println(topic, "Timedout")
 	}
 	return receivedMessages
@@ -149,8 +146,8 @@ func (ps *PubySuby) Push(topic string, message string) int64 {
 
 // Retrieves the last message posted to the que
 func (ps *PubySuby) LastMessageId(topic string) int64 {
-	var topicCommandChannel chan topicRequest
-	topicCommandChannel = ps.getTopicRequestChannel(topic)
+
+	topicCommandChannel := ps.getTopicRequestChannel(topic)
 	////fmt.Println("Received topic channel back")
 	// once we have the topic channel, we have to send it our listener info
 	myListenChannel := make(chan []TopicItem)
@@ -159,9 +156,7 @@ func (ps *PubySuby) LastMessageId(topic string) int64 {
 
 	results, ok := <-myListenChannel
 	if !ok {
-		//fmt.Println(topic + "got closed explicitly in wait stage")
-		log.Println("CLosed here")
-		return 0
+		log.Fatal("Blew up during LastMessageId because myListenChannel was closed")
 	}
 	return results[0].MessageId
 
@@ -194,8 +189,13 @@ func (ps *PubySuby) getTopicRequestChannel(topicName string) chan topicRequest {
 
 	// Send the request to receive our topic
 	ps.hubRequests <- hubRequest{topicName: topicName, hubReplyChannel: reply}
-
 	// Receive the reply
 	topicCommandChannel := <-reply
 	return topicCommandChannel
+}
+
+func drainRemaining(myListenChannel chan []TopicItem) {
+	for _ = range myListenChannel {
+
+	}
 }
