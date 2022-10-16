@@ -1,8 +1,6 @@
 package pubysuby
 
 import (
-	"fmt"
-	"github.com/stretchr/testify/assert"
 	"log"
 	"math/rand"
 	"runtime"
@@ -54,11 +52,16 @@ func TestPull(t *testing.T) {
 	<-time.After(time.Second * 5)
 
 	messageId := ps.Push("TestPull", "hello from test")
-	assert.Equal(t, messageId, ps.LastMessageId("TestPull"))
+	lastMessageId := ps.LastMessageId("TestPull")
+	if messageId != lastMessageId {
+		t.Errorf("Published message id %d does not equal last message id %d", messageId, lastMessageId)
+	}
 
 	// check that there is no other messages on the que
 	remainingMessages := ps.PullSince("TestPull", 1, messageId)
-	assert.Equal(t, len(remainingMessages), 0)
+	if len(remainingMessages) != 0 {
+		t.Errorf("Messages remained on the que after last one was pulled")
+	}
 
 	//<-time.After(time.Second * 5)
 }
@@ -127,7 +130,9 @@ func TestSub(t *testing.T) {
 		//close(in)
 	}()
 	count := <-doneReceivingMessages
-	assert.Equal(t, count, 2)
+	if count != 2 {
+		t.Errorf("Published 2 messges to the que, but %d received", count)
+	}
 	// wait for 1 second to see what happens when we push 3, 4 on the que
 	// <-time.After(time.Second * 1)
 	//	in, stop := ps.Sub("Test")
@@ -251,7 +256,10 @@ func TestPullSinceAndGC(t *testing.T) {
 
 	ps := NewPubySuby()
 	lastMessageId := ps.Push("Test", "one")
-	assert.Equal(t, lastMessageId, ps.LastMessageId("Test"))
+	retrievedLastMesasgeId := ps.LastMessageId("Test")
+	if lastMessageId != retrievedLastMesasgeId {
+		t.Errorf("Published message id %d does not equal last message id %d", lastMessageId, retrievedLastMesasgeId)
+	}
 
 	go func() {
 		// wait for 100 milliseconds in goroutine
@@ -266,12 +274,4 @@ func TestPullSinceAndGC(t *testing.T) {
 		results = ps.PullSince("Test", -100, lastMessageId)
 	}()
 	<-time.After(time.Second * 5)
-}
-
-func unused_imports() {
-	var _ = fmt.Printf
-	var _ = time.Saturday
-	var _ = strconv.Atoi
-	var _ = assert.Equal
-	var _ = log.Printf
 }
