@@ -1,4 +1,4 @@
-#pubysuby
+pubysuby
 ========
 
 In-memory message que in Go
@@ -20,6 +20,7 @@ To test the code with race detector
 ./race.sh
 ```
 
-## License
-========
-MIT
+License
+-------
+
+pubysuby is available under the [MIT](./license) license.
